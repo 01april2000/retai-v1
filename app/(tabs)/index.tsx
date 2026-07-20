@@ -1,98 +1,129 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet } from 'react-native';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+
+type Product = {
+  id: string;
+  name: string;
+  price: number;
+  stock: number;
+};
+
+type ApiResponse = {
+  status: string;
+  service: string;
+  timestamp: string;
+  products: Product[];
+};
+
+const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const [result, setResult] = useState<ApiResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
+  async function checkConnection() {
+    if (!apiBaseUrl) {
+      setError('EXPO_PUBLIC_API_BASE_URL belum dikonfigurasi.');
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/api`);
+
+      if (!response.ok) {
+        throw new Error(`Server merespons HTTP ${response.status}.`);
+      }
+
+      setResult((await response.json()) as ApiResponse);
+    } catch {
+      setResult(null);
+      setError('Tidak dapat menghubungi backend. Pastikan server dan HP berada di Wi-Fi yang sama.');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void checkConnection();
+  }, []);
+
+  return (
+    <ScrollView contentContainerStyle={styles.container}>
+      <ThemedView style={styles.titleContainer}>
+        <ThemedText type="title">Koneksi Backend</ThemedText>
+        <ThemedText>Endpoint: {apiBaseUrl ?? 'belum dikonfigurasi'}/api</ThemedText>
       </ThemedView>
       <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
+        <ThemedText type="subtitle">Status</ThemedText>
+        {isLoading && <ThemedText>Menghubungkan ke backend...</ThemedText>}
+        {result && (
+          <>
+            <ThemedText>Status: {result.status}</ThemedText>
+            <ThemedText>Service: {result.service}</ThemedText>
+            <ThemedText>Respons: {new Date(result.timestamp).toLocaleString()}</ThemedText>
+          </>
+        )}
+        {error && <ThemedText style={styles.error}>{error}</ThemedText>}
       </ThemedView>
-    </ParallaxScrollView>
+      {result && (
+        <ThemedView style={styles.stepContainer}>
+          <ThemedText type="subtitle">Produk Dummy</ThemedText>
+          {result.products.map((product) => (
+            <ThemedView key={product.id} style={styles.product}>
+              <ThemedText type="defaultSemiBold">{product.name}</ThemedText>
+              <ThemedText>Rp{product.price.toLocaleString('id-ID')}</ThemedText>
+              <ThemedText>Stok: {product.stock}</ThemedText>
+            </ThemedView>
+          ))}
+        </ThemedView>
+      )}
+      <Pressable style={styles.button} onPress={() => void checkConnection()}>
+        <ThemedText style={styles.buttonText}>Coba Lagi</ThemedText>
+      </Pressable>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    gap: 24,
+    padding: 24,
+  },
   titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 8,
   },
   stepContainer: {
     gap: 8,
-    marginBottom: 8,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  product: {
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 4,
+    padding: 12,
+  },
+  error: {
+    color: '#DC2626',
+  },
+  button: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#0A7EA4',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  buttonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
 });
