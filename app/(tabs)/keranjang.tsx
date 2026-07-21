@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -7,6 +8,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   View,
 } from 'react-native';
 
@@ -81,9 +83,22 @@ export default function KeranjangScreen() {
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [pendingProducts, setPendingProducts] = useState<Set<string>>(new Set());
   const [modalVisible, setModalVisible] = useState(false);
+  const [paymentInput, setPaymentInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const total = computeTotal(cartItems);
   const distinctSelectedCount = cartItems.length;
+  const paid = paymentInput === '' ? 0 : parseInt(paymentInput, 10);
+
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const filteredProducts = normalizedSearchQuery
+    ? products.filter((product) => product.name.toLowerCase().includes(normalizedSearchQuery))
+    : products;
+
+  function closeModal() {
+    setModalVisible(false);
+    setPaymentInput('');
+  }
 
   const fetchData = useCallback(async () => {
     if (!apiBaseUrl) {
@@ -110,9 +125,17 @@ export default function KeranjangScreen() {
     }
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      void fetchData();
+    }, [fetchData]),
+  );
+
   useEffect(() => {
-    void fetchData();
-  }, [fetchData]);
+    if (cartItems.length === 0) {
+      setPaymentInput('');
+    }
+  }, [cartItems]);
 
   async function handleAdd(product: Product) {
     setMutationError(null);
@@ -292,6 +315,7 @@ export default function KeranjangScreen() {
 
   function renderCartItem(item: CartItemWithProduct) {
     const isPending = pendingProducts.has(item.productId);
+    const atMinQuantity = item.quantity <= 1;
     const atMaxStock = item.quantity >= item.product.stock;
     const isOutOfStock = item.product.stock === 0;
 
@@ -313,24 +337,26 @@ export default function KeranjangScreen() {
             style={({ pressed }) => [
               styles.cartQtyBtn,
               styles.cartQtyBtnMinus,
-              isPending && styles.cartQtyBtnDisabled,
-              pressed && !isPending && styles.cartQtyBtnPressed,
+              (isPending || atMinQuantity) && styles.cartQtyBtnDisabled,
+              pressed && !isPending && !atMinQuantity && styles.cartQtyBtnPressed,
             ]}
             onPress={() => {
-              if (item.quantity <= 1) {
-                void handleCartRemove(item.productId);
-              } else {
+              if (item.quantity > 1) {
                 void handleCartUpdate(item.productId, item.quantity - 1);
               }
             }}
-            disabled={isPending}
-            accessibilityLabel={`Kurangi ${item.product.name}`}
+            disabled={isPending || atMinQuantity}
+            accessibilityLabel={
+              atMinQuantity
+                ? `Minimal 1, tidak bisa dikurangi`
+                : `Kurangi ${item.product.name}`
+            }
             accessibilityRole="button"
-            accessibilityState={{ disabled: isPending }}>
+            accessibilityState={{ disabled: isPending || atMinQuantity }}>
             <ThemedText
               style={[
                 styles.cartQtyBtnText,
-                isPending && styles.cartQtyBtnTextDisabled,
+                (isPending || atMinQuantity) && styles.cartQtyBtnTextDisabled,
               ]}>
               -
             </ThemedText>
@@ -405,10 +431,23 @@ export default function KeranjangScreen() {
           </ThemedText>
           {!isLoading && !error && (
             <ThemedText type="bodyMd" style={styles.headerCount}>
-              {products.length} produk
+              {searchQuery.trim()
+                ? `${filteredProducts.length} dari ${products.length} produk`
+                : `${products.length} produk`}
             </ThemedText>
           )}
         </View>
+
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Cari produk..."
+          placeholderTextColor={Luminous.outline}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          returnKeyType="search"
+          accessibilityLabel="Cari produk"
+          accessibilityRole="search"
+        />
 
         {isLoading && (
           <View style={styles.center}>
@@ -456,7 +495,18 @@ export default function KeranjangScreen() {
           </View>
         )}
 
-        {!isLoading && !error && products.map((p) => renderProduct(p))}
+        {!isLoading && !error && products.length > 0 && filteredProducts.length === 0 && (
+          <View style={styles.center}>
+            <ThemedText type="bodyLg" style={styles.emptyText}>
+              Produk tidak ditemukan.
+            </ThemedText>
+            <ThemedText type="bodyMd" style={styles.emptySubtext}>
+              Coba gunakan kata kunci lain.
+            </ThemedText>
+          </View>
+        )}
+
+        {!isLoading && !error && filteredProducts.map((p) => renderProduct(p))}
 
         <View style={{ height: bottomBarHeight + 16 }} />
       </ScrollView>
@@ -490,13 +540,13 @@ export default function KeranjangScreen() {
         visible={modalVisible}
         animationType="slide"
         transparent
-        onRequestClose={() => setModalVisible(false)}>
+        onRequestClose={closeModal}>
         <KeyboardAvoidingView
           style={styles.modalOverlay}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <Pressable
             style={styles.modalBackdrop}
-            onPress={() => setModalVisible(false)}
+            onPress={closeModal}
             accessibilityLabel="Tutup dialog"
             accessibilityRole="button"
           />
@@ -543,6 +593,46 @@ export default function KeranjangScreen() {
                   <ThemedText type="headlineMd" style={styles.cartTotalValue}>
                     {formatRupiah(total)}
                   </ThemedText>
+                </View>
+
+                <View style={styles.paymentSection}>
+                  <ThemedText type="bodyMd" style={styles.paymentLabel}>
+                    Jumlah Dibayar
+                  </ThemedText>
+                  <TextInput
+                    style={styles.paymentInput}
+                    keyboardType="number-pad"
+                    placeholder="Masukkan nominal"
+                    placeholderTextColor={Luminous.outline}
+                    value={paymentInput}
+                    onChangeText={(t) => setPaymentInput(t.replace(/\D/g, ''))}
+                    accessibilityLabel="Jumlah uang yang dibayar customer"
+                  />
+                  {paymentInput !== '' && (
+                    <View
+                      style={[
+                        styles.paymentResult,
+                        paid < total
+                          ? styles.paymentResultError
+                          : styles.paymentResultSuccess,
+                      ]}>
+                      <ThemedText
+                        type="bodyMd"
+                        style={[
+                          styles.paymentResultText,
+                          {
+                            color:
+                              paid < total
+                                ? Luminous.onErrorContainer
+                                : Luminous.onSuccessContainer,
+                          },
+                        ]}>
+                        {paid < total
+                          ? `Kekurangan ${formatRupiah(total - paid)}`
+                          : `Kembalian ${formatRupiah(paid - total)}`}
+                      </ThemedText>
+                    </View>
+                  )}
                 </View>
               </>
             )}
@@ -610,6 +700,16 @@ const styles = StyleSheet.create({
   },
   mutationErrorText: {
     color: Luminous.onErrorContainer,
+  },
+  searchInput: {
+    height: 44,
+    borderRadius: Radius.DEFAULT,
+    paddingHorizontal: 14,
+    fontSize: 16,
+    fontFamily: FontFamilies.regular,
+    backgroundColor: Luminous.surfaceContainerLow,
+    color: Luminous.onSurface,
+    marginBottom: 16,
   },
   emptyText: {
     color: Luminous.onSurfaceVariant,
@@ -839,5 +939,35 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     textTransform: 'uppercase',
+  },
+  paymentSection: {
+    gap: 8,
+  },
+  paymentLabel: {
+    color: Luminous.onSurfaceVariant,
+  },
+  paymentInput: {
+    borderWidth: 1,
+    borderColor: Luminous.outline,
+    borderRadius: Radius.DEFAULT,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 18,
+    fontFamily: FontFamilies.semiBold,
+    color: Luminous.onSurface,
+    backgroundColor: Luminous.surfaceContainerLowest,
+  },
+  paymentResult: {
+    borderRadius: Radius.sm,
+    padding: 12,
+  },
+  paymentResultError: {
+    backgroundColor: Luminous.errorContainer,
+  },
+  paymentResultSuccess: {
+    backgroundColor: Luminous.successContainer,
+  },
+  paymentResultText: {
+    fontFamily: FontFamilies.semiBold,
   },
 });

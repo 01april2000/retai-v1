@@ -146,6 +146,7 @@ export default function ProductScreen() {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [modalVisible, setModalVisible] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -180,6 +181,11 @@ export default function ProductScreen() {
   useEffect(() => {
     void fetchProducts();
   }, [fetchProducts]);
+
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const filteredProducts = normalizedSearchQuery
+    ? products.filter((product) => product.name.toLowerCase().includes(normalizedSearchQuery))
+    : products;
 
   function openCreateModal() {
     setEditingProduct(null);
@@ -342,9 +348,22 @@ export default function ProductScreen() {
             Produk
           </ThemedText>
           <ThemedText type="bodyMd" style={styles.headerCount}>
-            {products.length} produk
+            {searchQuery.trim()
+              ? `${filteredProducts.length} dari ${products.length} produk`
+              : `${products.length} produk`}
           </ThemedText>
         </View>
+
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Cari produk..."
+          placeholderTextColor={Luminous.outline}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          returnKeyType="search"
+          accessibilityLabel="Cari produk"
+          accessibilityRole="search"
+        />
 
         {isLoading && (
           <View style={styles.center}>
@@ -382,7 +401,18 @@ export default function ProductScreen() {
           </View>
         )}
 
-        {!isLoading && !error && products.map((p) => renderCard(p))}
+        {!isLoading && !error && products.length > 0 && filteredProducts.length === 0 && (
+          <View style={styles.center}>
+            <ThemedText type="bodyLg" style={styles.emptyText}>
+              Produk tidak ditemukan.
+            </ThemedText>
+            <ThemedText type="bodyMd" style={styles.emptySubtext}>
+              Coba gunakan kata kunci lain.
+            </ThemedText>
+          </View>
+        )}
+
+        {!isLoading && !error && filteredProducts.map((p) => renderCard(p))}
 
         <View style={styles.bottomSpacer} />
       </ScrollView>
@@ -557,6 +587,16 @@ const styles = StyleSheet.create({
   },
   emptySubtext: {
     color: Luminous.outline,
+  },
+  searchInput: {
+    height: 44,
+    borderRadius: Radius.DEFAULT,
+    paddingHorizontal: 14,
+    fontSize: 16,
+    fontFamily: FontFamilies.regular,
+    backgroundColor: Luminous.surfaceContainerLow,
+    color: Luminous.onSurface,
+    marginBottom: 16,
   },
   bottomSpacer: {
     height: 80,
