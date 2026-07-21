@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -81,44 +80,19 @@ function FloatingInput({
   inputRef?: React.RefObject<TextInput | null>;
 }) {
   const [focused, setFocused] = useState(false);
-  const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
-
-  useEffect(() => {
-    Animated.timing(anim, {
-      toValue: focused || value.length > 0 ? 1 : 0,
-      duration: 180,
-      useNativeDriver: false,
-    }).start();
-  }, [focused, value, anim]);
-
-  const labelStyle = {
-    position: 'absolute' as const,
-    left: 14,
-    top: anim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [18, 8],
-    }),
-    fontSize: anim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [16, 11],
-    }),
-    fontFamily: FontFamilies.regular,
-    color: anim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [Luminous.outline, focused ? Luminous.primary : Luminous.onSurfaceVariant],
-    }),
-    fontWeight: focused ? ('600' as const) : ('400' as const),
-    letterSpacing: focused ? (0.05 * 11) : 0,
-  };
 
   const borderColor = focused ? Luminous.primary : '#e2e8f0';
   const borderWidth = focused ? 2 : 1;
 
   return (
     <View style={styles.inputWrapper}>
-      <Animated.Text style={labelStyle}>
+      <ThemedText
+        style={[
+          styles.inputLabel,
+          focused && styles.inputLabelFocused,
+        ]}>
         {label}
-      </Animated.Text>
+      </ThemedText>
       <TextInput
         ref={inputRef}
         style={[
@@ -139,8 +113,7 @@ function FloatingInput({
         onBlur={() => setFocused(false)}
         onSubmitEditing={onSubmitEditing}
         returnKeyType={returnKeyType}
-        placeholderTextColor="transparent"
-        placeholder=" "
+        accessibilityLabel={label}
       />
     </View>
   );
@@ -430,11 +403,20 @@ export default function ProductScreen() {
         visible={modalVisible}
         animationType="slide"
         transparent
-        onRequestClose={() => setModalVisible(false)}>
+        onRequestClose={() => {
+          if (!isSubmitting) setModalVisible(false);
+        }}>
         <KeyboardAvoidingView
           style={styles.modalOverlay}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <Pressable style={styles.modalBackdrop} onPress={() => setModalVisible(false)} />
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={() => {
+              if (!isSubmitting) setModalVisible(false);
+            }}
+            accessibilityLabel="Tutup dialog"
+            accessibilityRole="button"
+          />
           <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 16) + 20 }]}>
             <View style={styles.modalHandle} />
             <ThemedText type="headlineMd" style={styles.modalTitle}>
@@ -486,7 +468,10 @@ export default function ProductScreen() {
                   pressed && !isSubmitting && styles.submitBtnPressed,
                 ]}
                 onPress={() => void handleSubmit()}
-                disabled={isSubmitting}>
+                disabled={isSubmitting}
+                accessibilityRole="button"
+                accessibilityLabel={editingProduct ? 'Simpan produk' : 'Tambah produk'}
+                accessibilityState={{ disabled: isSubmitting }}>
                 {isSubmitting ? (
                   <ActivityIndicator color={Luminous.onPrimary} size="small" />
                 ) : (
@@ -501,7 +486,10 @@ export default function ProductScreen() {
                   pressed && styles.cancelBtnPressed,
                 ]}
                 onPress={() => setModalVisible(false)}
-                disabled={isSubmitting}>
+                disabled={isSubmitting}
+                accessibilityRole="button"
+                accessibilityLabel="Batal"
+                accessibilityState={{ disabled: isSubmitting }}>
                 <ThemedText type="labelMd" style={styles.cancelBtnText}>
                   Batal
                 </ThemedText>
@@ -685,19 +673,23 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   inputWrapper: {
-    position: 'relative',
-    minHeight: 56,
-    justifyContent: 'flex-end',
+    gap: 6,
   },
   input: {
-    height: 56,
+    height: 52,
     borderRadius: Radius.DEFAULT,
     paddingHorizontal: 14,
-    paddingTop: 22,
-    paddingBottom: 8,
     fontSize: 16,
     fontFamily: FontFamilies.regular,
     backgroundColor: Luminous.surfaceContainerLow,
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontFamily: FontFamilies.medium,
+    color: Luminous.onSurfaceVariant,
+  },
+  inputLabelFocused: {
+    color: Luminous.primary,
   },
   formErrorBox: {
     backgroundColor: Luminous.errorContainer,
@@ -708,16 +700,14 @@ const styles = StyleSheet.create({
     color: Luminous.onErrorContainer,
   },
   modalActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 12,
-    paddingTop: 4,
+    paddingTop: 8,
   },
   cancelBtn: {
-    paddingHorizontal: 4,
-    height: 44,
+    minHeight: Spacing.touchTargetMin,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 4,
   },
   cancelBtnPressed: {
     opacity: 0.6,
@@ -726,7 +716,6 @@ const styles = StyleSheet.create({
     color: Luminous.onSurfaceVariant,
   },
   submitBtn: {
-    flex: 1,
     height: 52,
     justifyContent: 'center',
     alignItems: 'center',
