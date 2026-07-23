@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
   ActivityIndicator,
+  Animated,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -29,6 +30,11 @@ type CartItemWithProduct = {
   productId: string;
   quantity: number;
   product: Product;
+};
+
+type Point = {
+  x: number;
+  y: number;
 };
 
 const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
@@ -86,6 +92,48 @@ export default function KeranjangScreen() {
   const [paymentInput, setPaymentInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
+  const chipX = useRef(new Animated.Value(0)).current;
+  const chipY = useRef(new Animated.Value(0)).current;
+  const chipScale = useRef(new Animated.Value(1)).current;
+  const chipOpacity = useRef(new Animated.Value(1)).current;
+  const ctaScale = useRef(new Animated.Value(1)).current;
+  const screenRef = useRef<View>(null);
+  const ctaRef = useRef<View>(null);
+  const [flyingChip, setFlyingChip] = useState<{ name: string } | null>(null);
+
+  function startFlyingAnimation(fromX: number, fromY: number, productName: string) {
+    screenRef.current?.measureInWindow((screenX, screenY) => {
+      ctaRef.current?.measureInWindow((x, y, width, height) => {
+        chipX.setValue(fromX - screenX);
+        chipY.setValue(fromY - screenY);
+        chipScale.setValue(1);
+        chipOpacity.setValue(1);
+        setFlyingChip({ name: productName });
+
+        Animated.parallel([
+          Animated.timing(chipX, {
+            toValue: x + width / 2 - screenX,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(chipY, {
+            toValue: y + height / 2 - screenY,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(chipScale, { toValue: 0.3, duration: 500, useNativeDriver: true }),
+          Animated.timing(chipOpacity, { toValue: 0, duration: 500, useNativeDriver: true }),
+        ]).start(() => {
+          setFlyingChip(null);
+          Animated.sequence([
+            Animated.timing(ctaScale, { toValue: 1.08, duration: 100, useNativeDriver: true }),
+            Animated.timing(ctaScale, { toValue: 1, duration: 150, useNativeDriver: true }),
+          ]).start();
+        });
+      });
+    });
+  }
+
   const total = computeTotal(cartItems);
   const distinctSelectedCount = cartItems.length;
   const paid = paymentInput === '' ? 0 : parseInt(paymentInput, 10);
@@ -137,7 +185,7 @@ export default function KeranjangScreen() {
     }
   }, [cartItems]);
 
-  async function handleAdd(product: Product) {
+  async function handleAdd(product: Product, touchLocation: Point) {
     setMutationError(null);
     setPendingProducts((prev) => new Set(prev).add(product.id));
     try {
@@ -160,6 +208,11 @@ export default function KeranjangScreen() {
         }
         return [...prev, updated];
       });
+      startFlyingAnimation(
+        touchLocation.x,
+        touchLocation.y,
+        product.name,
+      );
     } catch (err) {
       setMutationError(
         err instanceof Error ? err.message : 'Gagal menambah item.',
@@ -256,7 +309,7 @@ export default function KeranjangScreen() {
 
     let buttonLabel: string;
     let buttonDisabled: boolean;
-    let buttonOnPress: (() => void) | undefined;
+    let buttonOnPress: ((touchLocation: Point) => void) | undefined;
 
     if (isOutOfStock) {
       buttonLabel = 'Habis';
@@ -269,7 +322,7 @@ export default function KeranjangScreen() {
     } else {
       buttonLabel = 'Tambah ke Keranjang';
       buttonDisabled = false;
-      buttonOnPress = () => void handleAdd(product);
+      buttonOnPress = (touchLocation) => void handleAdd(product, touchLocation);
     }
 
     return (
@@ -291,7 +344,10 @@ export default function KeranjangScreen() {
             buttonDisabled && styles.addBtnDisabled,
             !buttonDisabled && pressed && styles.addBtnPressed,
           ]}
-          onPress={buttonOnPress}
+          onPress={(e) => {
+            if (!buttonOnPress) return;
+            buttonOnPress({ x: e.nativeEvent.pageX, y: e.nativeEvent.pageY });
+          }}
           disabled={isPending || buttonDisabled}
           accessibilityLabel={buttonLabel}
           accessibilityRole="button"
@@ -420,7 +476,7 @@ export default function KeranjangScreen() {
   const bottomBarHeight = Math.max(insets.bottom, 12) + 60;
 
   return (
-    <View style={styles.screen}>
+    <View ref={screenRef} style={styles.screen}>
       <ScrollView
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
@@ -516,24 +572,28 @@ export default function KeranjangScreen() {
           styles.bottomBar,
           { paddingBottom: Math.max(insets.bottom, 12) },
         ]}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.ctaBtn,
-            pressed && styles.ctaBtnPressed,
-          ]}
-          onPress={() => setModalVisible(true)}
-          accessibilityLabel={`Lihat Keranjang, ${distinctSelectedCount} item dipilih`}
-          accessibilityRole="button"
-          accessibilityState={{ disabled: false }}>
-          <ThemedText type="labelMd" style={styles.ctaBtnText}>
-            Lihat Keranjang ({distinctSelectedCount})
-          </ThemedText>
-          {total > 0 && (
-            <ThemedText type="bodyMd" style={styles.ctaTotalText}>
-              {formatRupiah(total)}
+        <Animated.View
+          ref={ctaRef}
+          style={{ transform: [{ scale: ctaScale }] }}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.ctaBtn,
+              pressed && styles.ctaBtnPressed,
+            ]}
+            onPress={() => setModalVisible(true)}
+            accessibilityLabel={`Lihat Keranjang, ${distinctSelectedCount} item dipilih`}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: false }}>
+            <ThemedText type="labelMd" style={styles.ctaBtnText}>
+              Lihat Keranjang ({distinctSelectedCount})
             </ThemedText>
-          )}
-        </Pressable>
+            {total > 0 && (
+              <ThemedText type="bodyMd" style={styles.ctaTotalText}>
+                {formatRupiah(total)}
+              </ThemedText>
+            )}
+          </Pressable>
+        </Animated.View>
       </View>
 
       <Modal
@@ -639,6 +699,30 @@ export default function KeranjangScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {flyingChip && (
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          <Animated.View
+            style={[
+              styles.flyingChip,
+              {
+                transform: [
+                  { translateX: chipX },
+                  { translateY: chipY },
+                  { scale: chipScale },
+                ],
+                opacity: chipOpacity,
+              },
+            ]}>
+            <ThemedText
+              style={styles.flyingChipText}
+              type="labelSm"
+              numberOfLines={1}>
+              {flyingChip.name}
+            </ThemedText>
+          </Animated.View>
+        </View>
+      )}
     </View>
   );
 }
@@ -968,6 +1052,29 @@ const styles = StyleSheet.create({
     backgroundColor: Luminous.successContainer,
   },
   paymentResultText: {
+    fontFamily: FontFamilies.semiBold,
+  },
+  flyingChip: {
+    position: 'absolute',
+    left: -80,
+    top: -18,
+    width: 160,
+    minHeight: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Luminous.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: Radius.full,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  flyingChipText: {
+    color: Luminous.onPrimary,
+    fontSize: 12,
     fontFamily: FontFamilies.semiBold,
   },
 });
